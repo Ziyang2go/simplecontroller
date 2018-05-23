@@ -1,0 +1,16 @@
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: workflow-operator
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: workflow-operator
+    spec:
+      containers:
+      - name: workflow-operator
+        image: us.gcr.io/studious-lore-148916/workflow-operator:42448cd50320d72c1227207b9e6583fe4690da7a
+      serviceAccountName: workflow-operator
