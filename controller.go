@@ -12,10 +12,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	informercorev1 "k8s.io/client-go/informers/core/v1"
+	informerbatchv1 "k8s.io/client-go/informers/batch/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	batchv1 "k8s.io/client-go/kubernetes/typed/batch/v1"
 	listercorev1 "k8s.io/client-go/listers/core/v1"
+	listerbatchv1 "k8s.io/client-go/listers/batch/v1"
 	apicorev1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -40,8 +43,9 @@ type TGIKController struct {
 	namespaceGetter       corev1.NamespacesGetter
 	namespaceLister       listercorev1.NamespaceLister
 	namespaceListerSynced cache.InformerSynced
-
 	queue workqueue.RateLimitingInterface
+	jobGetter  batchv1.JobsGetter
+	jobLister  listerbatchv1.JobLister
 }
 
 func NewTGIKController(client *kubernetes.Clientset,
