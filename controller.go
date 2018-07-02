@@ -5,7 +5,6 @@ import (
 	"log"
 	"sync"
 	"time"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -13,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	informercorev1 "k8s.io/client-go/informers/core/v1"
 	informerbatchv1 "k8s.io/client-go/informers/batch/v1"
+	informerext "k8s.io/sample-controller/pkg/client/informers/externalversions/mythreekit/v1alpha1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -49,8 +49,8 @@ type TGIKController struct {
 }
 
 func NewTGIKController(client *kubernetes.Clientset,
-	secretInformer informercorev1.SecretInformer,
-	namespaceInformer informercorev1.NamespaceInformer) *TGIKController {
+	secretInformer informerext.MythreekitjobsInformer,
+	namespaceInformer informercorev1.NamespaceInformer, jobInformer informerbatchv1.JobInformer) *TGIKController {
 	c := &TGIKController{
 		secretGetter:          client.CoreV1(),
 		secretLister:          secretInformer.Lister(),
@@ -58,43 +58,27 @@ func NewTGIKController(client *kubernetes.Clientset,
 		namespaceGetter:       client.CoreV1(),
 		namespaceLister:       namespaceInformer.Lister(),
 		namespaceListerSynced: namespaceInformer.Informer().HasSynced,
+		jobGetter: 						 client.BatchV1(),
+		jobLister: 						 jobInformer.Lister(),
 		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "secretsync"),
 	}
 
-	// TODO: only schedule sync if it is a secret that has or had our
-	// annotation.
-	secretInformer.Informer().AddEventHandler(
+	jobInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				log.Print("secret added")
-				c.ScheduleSecretSync()
+				key, err := cache.MetaNamespaceKeyFunc(obj)
+				if err != nil {
+					log.Printf("onAdd key error for %#v: %v", obj, err)
+					runtime.HandleError(err)
+				}
+				log.Print("Jobs added ", key)			
+				c.ScheduleSecretSync(key)
 			},
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				log.Print("secret updated")
-				c.ScheduleSecretSync()
+				log.Print("Jobs updated")
 			},
 			DeleteFunc: func(obj interface{}) {
-				log.Print("secret deleted")
-				c.ScheduleSecretSync()
-			},
-		},
-	)
-
-	// TODO: only schedule sync if it is a namespace that has or had our
-	// annotation or the secretsync source namespace.
-	namespaceInformer.Informer().AddEventHandler(
-		cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				log.Print("namespace added")
-				c.ScheduleSecretSync()
-			},
-			UpdateFunc: func(oldObj, newObj interface{}) {
-				log.Print("namespace updated")
-				c.ScheduleSecretSync()
-			},
-			DeleteFunc: func(obj interface{}) {
-				log.Print("namespace deleted")
-				c.ScheduleSecretSync()
+				log.Print("Jobs deleted")
 			},
 		},
 	)
@@ -162,7 +146,7 @@ func (c *TGIKController) processNextWorkItem() bool {
 	defer c.queue.Done(key)
 
 	// do your work on the key.  This method will contains your "do stuff" logic
-	err := c.doSync()
+	err := c.doSync(key)
 	if err == nil {
 		// if you had no error, tell the queue to stop tracking history for your
 		// key. This will reset things like failure counts for per-item rate
@@ -186,8 +170,8 @@ func (c *TGIKController) processNextWorkItem() bool {
 	return true
 }
 
-func (c *TGIKController) ScheduleSecretSync() {
-	c.queue.Add(secretSyncKey)
+func (c *TGIKController) ScheduleSecretSync(key string) {
+	c.queue.Add(key)
 }
 
 func (c *TGIKController) getSecretsInNS(ns string) ([]*apicorev1.Secret, error) {
@@ -205,30 +189,30 @@ func (c *TGIKController) getSecretsInNS(ns string) ([]*apicorev1.Secret, error) 
 	return secrets, nil
 }
 
-func (c *TGIKController) doSync() error {
-	log.Printf("Starting doSync")
-	srcSecrets, err := c.getSecretsInNS(secretSyncSourceNamespace)
-	if err != nil {
-		return err
-	}
+func (c *TGIKController) doSync(key interface{}) error {
+	log.Printf("Starting doSync", key)
+	// srcSecrets, err := c.getSecretsInNS(secretSyncSourceNamespace)
+	// if err != nil {
+	// 	return err
+	// }
 
-	rawNamespaces, err := c.namespaceLister.List(labels.Everything())
-	if err != nil {
-		return err
-	}
-	var targetNamespaces []*apicorev1.Namespace
-	for _, ns := range rawNamespaces {
-		if _, ok := ns.Annotations[secretSyncAnnotation]; ok {
-			targetNamespaces = append(targetNamespaces, ns)
-		}
-	}
+	// rawNamespaces, err := c.namespaceLister.List(labels.Everything())
+	// if err != nil {
+	// 	return err
+	// }
+	// var targetNamespaces []*apicorev1.Namespace
+	// for _, ns := range rawNamespaces {
+	// 	if _, ok := ns.Annotations[secretSyncAnnotation]; ok {
+	// 		targetNamespaces = append(targetNamespaces, ns)
+	// 	}
+	// }
 
-	for _, ns := range targetNamespaces {
-		c.SyncNamespace(srcSecrets, ns.Name)
-	}
+	// for _, ns := range targetNamespaces {
+	// 	c.SyncNamespace(srcSecrets, ns.Name)
+	// }
 
-	log.Print("Finishing doSync")
-	return err
+	log.Print("Finishing doSync", key)
+	return nil
 }
 
 func (c *TGIKController) SyncNamespace(secrets []*apicorev1.Secret, ns string) {

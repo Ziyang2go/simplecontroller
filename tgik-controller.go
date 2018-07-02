@@ -7,8 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jbeda/tgik-controller/version"
-
+	"github.com/Ziyang2go/tgik-controller/version"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -38,10 +37,8 @@ func main() {
 		os.Exit(1)
 	}
 	client := kubernetes.NewForConfigOrDie(config)
-
 	sharedInformers := informers.NewSharedInformerFactory(client, 10*time.Minute)
-	tgikController := NewTGIKController(client, sharedInformers.Core().V1().Secrets(), sharedInformers.Core().V1().Namespaces())
-
+	tgikController := NewTGIKController(client, sharedInformers.Mythreekit().V1beta1().Mythreekitjobs(), sharedInformers.Batch().V1().Jobs())
 	sharedInformers.Start(nil)
 	tgikController.Run(nil)
 }
