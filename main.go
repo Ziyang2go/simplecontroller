@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 	"github.com/Ziyang2go/tgik-controller/version"
+	"github.com/Ziyang2go/tgik-controller/config"
+	"github.com/Ziyang2go/tgik-controller/mongo"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -14,8 +16,18 @@ import (
 )
 
 func main() {
-	log.Printf("tgik-controller version %s", version.VERSION)
+	log.Printf("controller version %s", version.VERSION)
 
+	configPath := flag.String("config", "./config/config.json", "path of the config file")
+
+	flag.Parse()
+	mongoconf, mongoerr := config.FromFile(*configPath)
+
+	if mongoerr != nil {
+		log.Fatal(mongoerr)
+	}
+
+	mongoSvc, _ := mongo.New(mongoconf.Mongo.Host, mongoconf.Mongo.Port, mongoconf.Mongo.DB, mongoconf.Mongo.Collection)
 	kubeconfig := ""
 	flag.StringVar(&kubeconfig, "kubeconfig", kubeconfig, "kubeconfig file")
 	flag.Parse()
@@ -37,7 +49,7 @@ func main() {
 	}
 	client := kubernetes.NewForConfigOrDie(config)
 	sharedInformers := informers.NewSharedInformerFactory(client, 10*time.Minute)
-	tgikController := NewMythreekitController(client, sharedInformers.Batch().V1().Jobs())
+	jobController := NewJobController(client, sharedInformers.Batch().V1().Jobs(), mongoSvc)
 	sharedInformers.Start(nil)
-	tgikController.Run(nil)
+	jobController.Run(nil)
 }

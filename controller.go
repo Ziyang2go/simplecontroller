@@ -5,8 +5,9 @@ import (
 	"log"
 	"sync"
 	"time"
+	"strings"
 	// apierrors "k8s.io/apimachinery/pkg/api/errors"
-	// "k8s.io/apimachinery/pkg/labels"
+	//"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	// "k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -20,19 +21,30 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-type MythreekitController struct {
+type MongoSVC interface {
+	Create(string, string) (error)
+	Update(string, string, string) (string, error)
+	Close() error
+}
+
+const targetNs = "mythreekit"
+
+type JobController struct {
 	queue workqueue.RateLimitingInterface
 	jobGetter  batchv1.JobsGetter
 	jobLister  listerbatchv1.JobLister
 	jobListerSynced cache.InformerSynced
+	mongoSvc   MongoSVC
 }
 
-func NewMythreekitController(client *kubernetes.Clientset,
-	jobInformer informerbatchv1.JobInformer) *MythreekitController {
-	c := &MythreekitController{
+
+func NewJobController(client *kubernetes.Clientset,
+	jobInformer informerbatchv1.JobInformer, mongoSvc MongoSVC) *JobController {
+	c := &JobController{
 		jobGetter: 						 client.BatchV1(),
 		jobLister: 						 jobInformer.Lister(),
 		jobListerSynced:			jobInformer.Informer().HasSynced,
+		mongoSvc:             mongoSvc,
 		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "secretsync"),
 	}
 
@@ -44,12 +56,19 @@ func NewMythreekitController(client *kubernetes.Clientset,
 					log.Printf("onAdd key error for %#v: %v", obj, err)
 					runtime.HandleError(err)
 				}
-				log.Print("Jobs added ", key)			
 				c.EnqueJobs(key)
 			},
+
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				log.Print("Jobs updated")
+				// key, err := cache.MetaNamespaceKeyFunc(newObj)
+				// if err != nil {
+				// 	log.Printf("onUpdate key error for %#v: %v", newObj, err)
+				// 	runtime.HandleError(err)
+				// }
+				//c.UpdateJob(key)
 			},
+
 			DeleteFunc: func(obj interface{}) {
 				log.Print("Jobs deleted")
 			},
@@ -58,7 +77,7 @@ func NewMythreekitController(client *kubernetes.Clientset,
 	return c
 }
 
-func (c *MythreekitController) Run(stop <-chan struct{}) {
+func (c *JobController) Run(stop <-chan struct{}) {
 	var wg sync.WaitGroup
 
 	defer func() {
@@ -84,10 +103,10 @@ func (c *MythreekitController) Run(stop <-chan struct{}) {
 
 	go func() {
 		// runWorker will loop until "something bad" happens. wait.Until will
-		// then rekick the worker after one second.		
+		// then rekick the worker after one second.
 		wait.Until(c.runWorker, time.Second, stop)
 		// tell the WaitGroup this worker is done
-		log.Print("worker done")		
+		log.Print("worker done")
 		wg.Done()
 	}()
 
@@ -97,7 +116,7 @@ func (c *MythreekitController) Run(stop <-chan struct{}) {
 	log.Print("received stop signal")
 }
 
-func (c *MythreekitController) runWorker() {
+func (c *JobController) runWorker() {
 	// hot loop until we're told to stop.  processNextWorkItem will
 	// automatically wait until there's work available, so we don't worry
 	// about secondary waits
@@ -107,19 +126,20 @@ func (c *MythreekitController) runWorker() {
 
 // processNextWorkItem deals with one key off the queue.  It returns false
 // when it's time to quit.
-func (c *MythreekitController) processNextWorkItem() bool {
+func (c *JobController) processNextWorkItem() bool {
 	// pull the next work item from queue.  It should be a key we use to lookup
 	// something in a cache
 	key, quit := c.queue.Get()
 	if quit {
 		return false
 	}
+
 	// you always have to indicate to the queue that you've completed a piece of
 	// work
 	defer c.queue.Done(key)
 
 	// do your work on the key.  This method will contains your "do stuff" logic
-	err := c.StartJob(key)
+	err := c.UpdateJob(key)
 	if err == nil {
 		// if you had no error, tell the queue to stop tracking history for your
 		// key. This will reset things like failure counts for per-item rate
@@ -131,7 +151,7 @@ func (c *MythreekitController) processNextWorkItem() bool {
 	// there was a failure so be sure to report it.  This method allows for
 	// pluggable error handling which can be used for things like
 	// cluster-monitoring
-	runtime.HandleError(fmt.Errorf("doSync failed with: %v", err))
+	runtime.HandleError(fmt.Errorf("Updatejob failed with: %v", err))
 
 	// since we failed, we should requeue the item to work on later.  This
 	// method will add a backoff to avoid hotlooping on particular items
@@ -143,11 +163,74 @@ func (c *MythreekitController) processNextWorkItem() bool {
 	return true
 }
 
-func (c *MythreekitController) EnqueJobs(key string) {
+func (c *JobController) EnqueJobs(key string) {
 	c.queue.Add(key)
 }
 
-// func (c *MythreekitController) getSecretsInNS(ns string) ([]*apicorev1.Secret, error) {
+func (c *JobController) CreateJob(key interface{}) error {
+	arr := strings.Split(key.(string), "/")
+	ns, jobName := arr[0], arr[1]
+	// if ns != targetNs {
+	// 	log.Print("ignore different namespace jobs")
+	//  	return nil
+	// }
+	kubeJob, err := c.jobLister.Jobs(ns).Get(jobName)
+	if err != nil {
+		return err
+	}
+	jobSucceed := kubeJob.Status.Succeeded
+	jobFailed := kubeJob.Status.Failed
+	log.Print("update succeed job ", jobSucceed)
+	log.Print("upddate failed job ", jobFailed)
+	mongoErr := c.mongoSvc.Create(jobName, "Pending")
+	if mongoErr != nil {
+		log.Printf("Save to mongo error $v", mongoErr)
+	}
+	return nil
+}
+
+func (c *JobController) UpdateJob(key interface{}) error {
+	arr := strings.Split(key.(string), "/")
+	ns, jobName := arr[0], arr[1]
+	// if ns != targetNs {
+	// 	log.Print("ignore different namespace jobs")
+	//  	return nil
+	// }
+	kubeJob, err := c.jobLister.Jobs(ns).Get(jobName)
+	if err != nil {
+		return err
+	}
+	jobSucceed := kubeJob.Status.Succeeded
+	jobFailed := kubeJob.Status.Failed
+	status := "working"
+	if jobSucceed == 1 {
+		status = "ok"
+	}
+	if jobFailed == 1 {
+		status = "failed"
+	}
+	var jobLog string = ""
+	if status == "ok" {
+		jobLog, _ = c.getJobLogs(key)
+	}
+	_, mongoErr := c.mongoSvc.Update(jobName, status, jobLog)
+	if mongoErr != nil {
+		log.Printf("Save to mongo error %v", mongoErr)
+	}
+	return nil
+}
+
+func (c *JobController) getJobLogs(key interface{}) (string, error) {
+	// arr := strings.Split(key.(string), "/")
+	// ns, jobName := arr[0], arr[1]
+	// kubeJob, err := c.jobLister.Jobs(ns).Get(jobName)
+	// if err != nil {
+	// 	return "", err
+	// }
+	return "123", nil
+}
+
+// func (c *JobController) getSecretsInNS(ns string) ([]*apicorev1.Secret, error) {
 // 	rawSecrets, err := c.secretLister.Secrets(ns).List(labels.Everything())
 // 	if err != nil {
 // 		return nil, err
@@ -162,7 +245,7 @@ func (c *MythreekitController) EnqueJobs(key string) {
 // 	return secrets, nil
 // }
 
-func (c *MythreekitController) StartJob(key interface{}) error {
+func (c *JobController) StartJob(key interface{}) error {
 	log.Printf("Starting work", key)
 	// srcSecrets, err := c.getSecretsInNS(secretSyncSourceNamespace)
 	// if err != nil {
@@ -188,7 +271,7 @@ func (c *MythreekitController) StartJob(key interface{}) error {
 	return nil
 }
 
-// func (c *MythreekitController) SyncNamespace(secrets []*apicorev1.Secret, ns string) {
+// func (c *JobController) SyncNamespace(secrets []*apicorev1.Secret, ns string) {
 // 	// 1. Create/Update all of the secrets in this namespace
 // 	for _, secret := range secrets {
 // 		newSecretInf, _ := scheme.Scheme.DeepCopy(secret)
