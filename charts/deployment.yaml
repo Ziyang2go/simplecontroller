@@ -1,0 +1,14 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: job-controller
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: job-controller
+    spec:
+      containers:
+      - name: job-controller
+        image: "ziyang2go/tgik-controller: {{ tag }}"
