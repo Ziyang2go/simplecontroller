@@ -16,10 +16,10 @@
 BIN := tgik-controller
 
 # This repo's root import path (under GOPATH).
-PKG := github.com/jbeda/tgik-controller
+PKG := github.com/Ziyang2go/tgik-controller
 
 # Where to push the docker image.
-REGISTRY ?= jbeda
+REGISTRY ?= ziyang2go
 
 # Which architecture to build - see $(ALL_ARCH) for options.
 ARCH ?= amd64

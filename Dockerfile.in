@@ -17,6 +17,5 @@ FROM ARG_FROM
 MAINTAINER Joe Beda <joe@heptio.com>
 
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
-
 USER nobody:nobody
 ENTRYPOINT ["/ARG_BIN"]
