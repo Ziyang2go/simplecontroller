@@ -6,14 +6,18 @@ import (
 	"sync"
 	"time"
 	"strings"
+	"bytes"
 	// apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	//"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	// "k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/pkg/api/v1"
 	informerbatchv1 "k8s.io/client-go/informers/batch/v1"
 	"k8s.io/client-go/kubernetes"
 	// "k8s.io/client-go/kubernetes/scheme"
+	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	batchv1 "k8s.io/client-go/kubernetes/typed/batch/v1"
 	listerbatchv1 "k8s.io/client-go/listers/batch/v1"
 	// apicorev1 "k8s.io/client-go/pkg/api/v1"
@@ -34,6 +38,7 @@ type JobController struct {
 	jobGetter  batchv1.JobsGetter
 	jobLister  listerbatchv1.JobLister
 	jobListerSynced cache.InformerSynced
+	podGetter  corev1.PodsGetter
 	mongoSvc   MongoSVC
 }
 
@@ -44,6 +49,7 @@ func NewJobController(client *kubernetes.Clientset,
 		jobGetter: 						 client.BatchV1(),
 		jobLister: 						 jobInformer.Lister(),
 		jobListerSynced:			jobInformer.Informer().HasSynced,
+		podGetter:            client.CoreV1(),
 		mongoSvc:             mongoSvc,
 		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "secretsync"),
 	}
@@ -56,17 +62,17 @@ func NewJobController(client *kubernetes.Clientset,
 					log.Printf("onAdd key error for %#v: %v", obj, err)
 					runtime.HandleError(err)
 				}
-				c.EnqueJobs(key)
+				c.CreateJob(key)
 			},
 
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				log.Print("Jobs updated")
-				// key, err := cache.MetaNamespaceKeyFunc(newObj)
-				// if err != nil {
-				// 	log.Printf("onUpdate key error for %#v: %v", newObj, err)
-				// 	runtime.HandleError(err)
-				// }
-				//c.UpdateJob(key)
+				key, err := cache.MetaNamespaceKeyFunc(newObj)
+				if err != nil {
+					log.Printf("onUpdate key error for %#v: %v", newObj, err)
+					runtime.HandleError(err)
+				}
+				c.UpdateJob(key)
 			},
 
 			DeleteFunc: func(obj interface{}) {
@@ -221,13 +227,34 @@ func (c *JobController) UpdateJob(key interface{}) error {
 }
 
 func (c *JobController) getJobLogs(key interface{}) (string, error) {
-	// arr := strings.Split(key.(string), "/")
-	// ns, jobName := arr[0], arr[1]
-	// kubeJob, err := c.jobLister.Jobs(ns).Get(jobName)
-	// if err != nil {
-	// 	return "", err
-	// }
-	return "123", nil
+	arr := strings.Split(key.(string), "/")
+	ns, jobName := arr[0], arr[1]
+	log.Print("GET POD FOR ", jobName)
+	jobPods, err := c.podGetter.Pods(ns).List(metav1.ListOptions{	LabelSelector: "job-name="+jobName })
+	if err != nil {
+		log.Printf("List pods error %v", err)
+		return "", err
+	}
+	podName := jobPods.Items[0].Name;
+	container := jobPods.Items[0].Spec.Containers[0].Name
+
+	logOptions := &v1.PodLogOptions{
+		Container: container,
+		Follow:     false,
+		Previous:   false,
+		Timestamps: true,
+	}
+	podLogs := c.podGetter.Pods(ns).GetLogs(podName, logOptions)
+	readCloser, readErr := podLogs.Stream()
+	if readErr != nil {
+			log.Printf("Read Stream error %v", readErr)
+			return "", readErr
+	}
+	defer readCloser.Close()
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(readCloser)
+	log.Printf("Logs for the pod is %v", buf.String())
+	return buf.String(), nil
 }
 
 // func (c *JobController) getSecretsInNS(ns string) ([]*apicorev1.Secret, error) {
