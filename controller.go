@@ -7,20 +7,15 @@ import (
 	"time"
 	"strings"
 	"bytes"
-	// apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	//"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/runtime"
-	// "k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/pkg/api/v1"
 	informerbatchv1 "k8s.io/client-go/informers/batch/v1"
 	"k8s.io/client-go/kubernetes"
-	// "k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	batchv1 "k8s.io/client-go/kubernetes/typed/batch/v1"
 	listerbatchv1 "k8s.io/client-go/listers/batch/v1"
-	// apicorev1 "k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -133,7 +128,7 @@ func (c *JobController) runWorker() {
 // processNextWorkItem deals with one key off the queue.  It returns false
 // when it's time to quit.
 func (c *JobController) processNextWorkItem() bool {
-	// pull the next work item from queue.  It should be a key we use to lookup
+	// pull the next work item from queue.  It should metav1e a key we use to lookup
 	// something in a cache
 	key, quit := c.queue.Get()
 	if quit {
@@ -176,18 +171,19 @@ func (c *JobController) EnqueJobs(key string) {
 func (c *JobController) CreateJob(key interface{}) error {
 	arr := strings.Split(key.(string), "/")
 	ns, jobName := arr[0], arr[1]
-	// if ns != targetNs {
-	// 	log.Print("ignore different namespace jobs")
-	//  	return nil
-	// }
+	if ns != targetNs {
+		log.Print("ignore different namespace jobs")
+	 	return nil
+	}
 	kubeJob, err := c.jobLister.Jobs(ns).Get(jobName)
 	if err != nil {
 		return err
 	}
 	jobSucceed := kubeJob.Status.Succeeded
 	jobFailed := kubeJob.Status.Failed
-	log.Print("update succeed job ", jobSucceed)
-	log.Print("upddate failed job ", jobFailed)
+	if jobSucceed == 1 || jobFailed == 1 {
+		return nil
+	}
 	mongoErr := c.mongoSvc.Create(jobName, "Pending")
 	if mongoErr != nil {
 		log.Printf("Save to mongo error $v", mongoErr)
@@ -198,10 +194,10 @@ func (c *JobController) CreateJob(key interface{}) error {
 func (c *JobController) UpdateJob(key interface{}) error {
 	arr := strings.Split(key.(string), "/")
 	ns, jobName := arr[0], arr[1]
-	// if ns != targetNs {
-	// 	log.Print("ignore different namespace jobs")
-	//  	return nil
-	// }
+	if ns != targetNs {
+		log.Print("ignore different namespace jobs")
+	 	return nil
+	}
 	kubeJob, err := c.jobLister.Jobs(ns).Get(jobName)
 	if err != nil {
 		return err
@@ -216,9 +212,11 @@ func (c *JobController) UpdateJob(key interface{}) error {
 		status = "failed"
 	}
 	var jobLog string = ""
-	if status == "ok" {
-		jobLog, _ = c.getJobLogs(key)
+	if status == "ok" || status == "failed" {
+		jobLog, _ = c.getJobLogs(ns, jobName)
+		c.cleanUp(ns, jobName)
 	}
+
 	_, mongoErr := c.mongoSvc.Update(jobName, status, jobLog)
 	if mongoErr != nil {
 		log.Printf("Save to mongo error %v", mongoErr)
@@ -226,10 +224,8 @@ func (c *JobController) UpdateJob(key interface{}) error {
 	return nil
 }
 
-func (c *JobController) getJobLogs(key interface{}) (string, error) {
-	arr := strings.Split(key.(string), "/")
-	ns, jobName := arr[0], arr[1]
-	log.Print("GET POD FOR ", jobName)
+func (c *JobController) getJobLogs(ns string, jobName string) (string, error) {
+	log.Print("Get logs for job ", jobName)
 	jobPods, err := c.podGetter.Pods(ns).List(metav1.ListOptions{	LabelSelector: "job-name="+jobName })
 	if err != nil {
 		log.Printf("List pods error %v", err)
@@ -244,8 +240,8 @@ func (c *JobController) getJobLogs(key interface{}) (string, error) {
 		Previous:   false,
 		Timestamps: true,
 	}
-	podLogs := c.podGetter.Pods(ns).GetLogs(podName, logOptions)
-	readCloser, readErr := podLogs.Stream()
+	logStream := c.podGetter.Pods(ns).GetLogs(podName, logOptions)
+	readCloser, readErr := logStream.Stream()
 	if readErr != nil {
 			log.Printf("Read Stream error %v", readErr)
 			return "", readErr
@@ -253,93 +249,13 @@ func (c *JobController) getJobLogs(key interface{}) (string, error) {
 	defer readCloser.Close()
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(readCloser)
-	log.Printf("Logs for the pod is %v", buf.String())
 	return buf.String(), nil
 }
 
-// func (c *JobController) getSecretsInNS(ns string) ([]*apicorev1.Secret, error) {
-// 	rawSecrets, err := c.secretLister.Secrets(ns).List(labels.Everything())
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	var secrets []*apicorev1.Secret
-// 	for _, secret := range rawSecrets {
-// 		if _, ok := secret.Annotations[secretSyncAnnotation]; ok {
-// 			secrets = append(secrets, secret)
-// 		}
-// 	}
-// 	return secrets, nil
-// }
-
-func (c *JobController) StartJob(key interface{}) error {
-	log.Printf("Starting work", key)
-	// srcSecrets, err := c.getSecretsInNS(secretSyncSourceNamespace)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// rawNamespaces, err := c.namespaceLister.List(labels.Everything())
-	// if err != nil {
-	// 	return err
-	// }
-	// var targetNamespaces []*apicorev1.Namespace
-	// for _, ns := range rawNamespaces {
-	// 	if _, ok := ns.Annotations[secretSyncAnnotation]; ok {
-	// 		targetNamespaces = append(targetNamespaces, ns)
-	// 	}
-	// }
-
-	// for _, ns := range targetNamespaces {
-	// 	c.SyncNamespace(srcSecrets, ns.Name)
-	// }
-
-	log.Print("Finishing", key)
-	return nil
+func (c *JobController) cleanUp(ns string, jobName string) {
+	log.Print("Clean up job ", jobName)
+	err := c.jobGetter.Jobs(ns).Delete(jobName, nil)
+	if err != nil {
+		log.Printf("Clean up job error for %s %v", jobName, err)
+	}
 }
-
-// func (c *JobController) SyncNamespace(secrets []*apicorev1.Secret, ns string) {
-// 	// 1. Create/Update all of the secrets in this namespace
-// 	for _, secret := range secrets {
-// 		newSecretInf, _ := scheme.Scheme.DeepCopy(secret)
-// 		newSecret := newSecretInf.(*apicorev1.Secret)
-// 		newSecret.Namespace = ns
-// 		newSecret.ResourceVersion = ""
-// 		newSecret.UID = ""
-
-// 		log.Printf("Creating %v/%v", ns, secret.Name)
-// 		_, err := c.secretGetter.Secrets(ns).Create(newSecret)
-// 		if apierrors.IsAlreadyExists(err) {
-// 			log.Printf("Scratch that, updating %v/%v", ns, secret.Name)
-// 			_, err = c.secretGetter.Secrets(ns).Update(newSecret)
-// 		}
-// 		if err != nil {
-// 			log.Printf("Error adding secret %v/%v: %v", ns, secret.Name, err)
-// 		}
-// 	}
-
-// 	// 2. Delete secrets that have annotation but are not in our src list
-// 	srcSecrets := sets.String{}
-// 	targetSecrets := sets.String{}
-
-// 	for _, secret := range secrets {
-// 		srcSecrets.Insert(secret.Name)
-// 	}
-
-// 	targetSecretList, err := c.getSecretsInNS(ns)
-// 	if err != nil {
-// 		log.Printf("Error listing secrets in %v: %v", ns, err)
-// 	}
-// 	for _, secret := range targetSecretList {
-// 		targetSecrets.Insert(secret.Name)
-// 	}
-
-// 	deleteSet := targetSecrets.Difference(srcSecrets)
-// 	for secretName, _ := range deleteSet {
-// 		log.Printf("Delete %v/%v", ns, secretName)
-// 		err = c.secretGetter.Secrets(ns).Delete(secretName, nil)
-// 		if err != nil {
-// 			log.Printf("Error deleting %v/%v: %v", ns, secretName, err)
-// 		}
-// 	}
-// }
