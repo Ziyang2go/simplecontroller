@@ -4,9 +4,10 @@ metadata:
   name: job-controller
 rules:
 - apiGroups:
-  - "core"
+  - ""
   resources:
   - pods
+  - pods/log
   verbs:
   - '*'
 - apiGroups:

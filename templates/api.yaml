@@ -12,5 +12,5 @@ spec:
     spec:
       containers:
       - name: job-controller
-        image: "ziyang2go/tgik-controller-amd64:a6ca923"
+        image: "ziyang2go/tgik-controller-amd64:6b2459e"
       serviceAccountName: job-controller

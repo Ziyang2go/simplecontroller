@@ -254,7 +254,7 @@ func (c *JobController) getJobLogs(ns string, jobName string) (string, error) {
 
 func (c *JobController) cleanUp(ns string, jobName string) {
 	log.Print("Clean up job ", jobName)
-	err := c.jobGetter.Jobs(ns).Delete(jobName, nil)
+	err := c.jobGetter.Jobs(ns).Delete(jobName, &metav1.DeleteOptions{ PropagationPolicy: &metav1.DeletePropagationBackground })
 	if err != nil {
 		log.Printf("Clean up job error for %s %v", jobName, err)
 	}
