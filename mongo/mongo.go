@@ -14,6 +14,7 @@ type MongoSVC interface {
 }
 
 func New(host, port, dbName string, collectionName string) (MongoSVC, error) {
+	log.Printf("Connect to Mongo DB %s %s", host, port )
 	db, err :=  mgo.Dial(host + ":" + port)
 	if err != nil {
 		return nil, err

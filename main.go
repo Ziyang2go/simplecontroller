@@ -21,13 +21,16 @@ func main() {
 	configPath := flag.String("config", "./config/config.json", "path of the config file")
 
 	flag.Parse()
-	mongoconf, mongoerr := config.FromFile(*configPath)
+	mongoconf, loadErr := config.FromFile(*configPath)
 
-	if mongoerr != nil {
-		log.Fatal(mongoerr)
+	if loadErr != nil {
+		log.Fatal(loadErr)
 	}
 
-	mongoSvc, _ := mongo.New(mongoconf.Mongo.Host, mongoconf.Mongo.Port, mongoconf.Mongo.DB, mongoconf.Mongo.Collection)
+	mongoSvc, mongoErr := mongo.New(mongoconf.Mongo.Host, mongoconf.Mongo.Port, mongoconf.Mongo.DB, mongoconf.Mongo.Collection)
+	if mongoErr != nil {
+		log.Fatal(mongoErr)
+	}
 	kubeconfig := ""
 	flag.StringVar(&kubeconfig, "kubeconfig", kubeconfig, "kubeconfig file")
 	flag.Parse()

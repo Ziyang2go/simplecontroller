@@ -1,12 +1,12 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: workflow-operator
+  name: job-controller
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: workflow-operator
+  name: job-controller
 subjects:
 - kind: ServiceAccount
-  name: workflow-operator
-  namespace: blue
+  name: job-controller
+  namespace: mythreekit

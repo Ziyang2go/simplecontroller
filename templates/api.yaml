@@ -2,15 +2,15 @@
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
-  name: workflow-operator
+  name: job-controller
 spec:
   replicas: 1
   template:
     metadata:
       labels:
-        app: workflow-operator
+        app: job-controller
     spec:
       containers:
-      - name: workflow-operator
-        image: us.gcr.io/studious-lore-148916/workflow-operator:42448cd50320d72c1227207b9e6583fe4690da7a
-      serviceAccountName: workflow-operator
+      - name: job-controller
+        image: "ziyang2go/tgik-controller-amd64:a6ca923"
+      serviceAccountName: job-controller
