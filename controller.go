@@ -1,27 +1,28 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
-	"strings"
-	"bytes"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/pkg/api/v1"
 	informerbatchv1 "k8s.io/client-go/informers/batch/v1"
 	"k8s.io/client-go/kubernetes"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	batchv1 "k8s.io/client-go/kubernetes/typed/batch/v1"
+	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	listerbatchv1 "k8s.io/client-go/listers/batch/v1"
+	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 )
 
 type MongoSVC interface {
-	Create(string, string) (error)
+	Create(string, string) error
 	Update(string, string, string) (string, error)
 	Close() error
 }
@@ -29,24 +30,22 @@ type MongoSVC interface {
 const targetNs = "mythreekit"
 
 type JobController struct {
-	queue workqueue.RateLimitingInterface
-	jobGetter  batchv1.JobsGetter
-	jobLister  listerbatchv1.JobLister
+	queue           workqueue.RateLimitingInterface
+	jobGetter       batchv1.JobsGetter
+	jobLister       listerbatchv1.JobLister
 	jobListerSynced cache.InformerSynced
-	podGetter  corev1.PodsGetter
-	mongoSvc   MongoSVC
+	podGetter       corev1.PodsGetter
+	mongoSvc        MongoSVC
 }
 
-
-func NewJobController(client *kubernetes.Clientset,
-	jobInformer informerbatchv1.JobInformer, mongoSvc MongoSVC) *JobController {
+func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.JobInformer, mongoSvc MongoSVC) *JobController {
 	c := &JobController{
-		jobGetter: 						 client.BatchV1(),
-		jobLister: 						 jobInformer.Lister(),
-		jobListerSynced:			jobInformer.Informer().HasSynced,
-		podGetter:            client.CoreV1(),
-		mongoSvc:             mongoSvc,
-		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "secretsync"),
+		jobGetter:       client.BatchV1(),
+		jobLister:       jobInformer.Lister(),
+		jobListerSynced: jobInformer.Informer().HasSynced,
+		podGetter:       client.CoreV1(),
+		mongoSvc:        mongoSvc,
+		queue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "secretsync"),
 	}
 
 	jobInformer.Informer().AddEventHandler(
@@ -173,7 +172,7 @@ func (c *JobController) CreateJob(key interface{}) error {
 	ns, jobName := arr[0], arr[1]
 	if ns != targetNs {
 		log.Print("ignore different namespace jobs")
-	 	return nil
+		return nil
 	}
 	kubeJob, err := c.jobLister.Jobs(ns).Get(jobName)
 	if err != nil {
@@ -196,7 +195,7 @@ func (c *JobController) UpdateJob(key interface{}) error {
 	ns, jobName := arr[0], arr[1]
 	if ns != targetNs {
 		log.Print("ignore different namespace jobs")
-	 	return nil
+		return nil
 	}
 	kubeJob, err := c.jobLister.Jobs(ns).Get(jobName)
 	if err != nil {
@@ -226,16 +225,16 @@ func (c *JobController) UpdateJob(key interface{}) error {
 
 func (c *JobController) getJobLogs(ns string, jobName string) (string, error) {
 	log.Print("Get logs for job ", jobName)
-	jobPods, err := c.podGetter.Pods(ns).List(metav1.ListOptions{	LabelSelector: "job-name="+jobName })
+	jobPods, err := c.podGetter.Pods(ns).List(metav1.ListOptions{LabelSelector: "job-name=" + jobName})
 	if err != nil {
 		log.Printf("List pods error %v", err)
 		return "", err
 	}
-	podName := jobPods.Items[0].Name;
+	podName := jobPods.Items[0].Name
 	container := jobPods.Items[0].Spec.Containers[0].Name
 
 	logOptions := &v1.PodLogOptions{
-		Container: container,
+		Container:  container,
 		Follow:     false,
 		Previous:   false,
 		Timestamps: true,
@@ -243,8 +242,8 @@ func (c *JobController) getJobLogs(ns string, jobName string) (string, error) {
 	logStream := c.podGetter.Pods(ns).GetLogs(podName, logOptions)
 	readCloser, readErr := logStream.Stream()
 	if readErr != nil {
-			log.Printf("Read Stream error %v", readErr)
-			return "", readErr
+		log.Printf("Read Stream error %v", readErr)
+		return "", readErr
 	}
 	defer readCloser.Close()
 	buf := new(bytes.Buffer)
@@ -255,7 +254,7 @@ func (c *JobController) getJobLogs(ns string, jobName string) (string, error) {
 func (c *JobController) cleanUp(ns string, jobName string) {
 	log.Print("Clean up job ", jobName)
 	policy := metav1.DeletePropagationBackground
-	err := c.jobGetter.Jobs(ns).Delete(jobName, &metav1.DeleteOptions{ PropagationPolicy: &policy })
+	err := c.jobGetter.Jobs(ns).Delete(jobName, &metav1.DeleteOptions{PropagationPolicy: &policy})
 	if err != nil {
 		log.Printf("Clean up job error for %s %v", jobName, err)
 	}

@@ -8,10 +8,10 @@ import (
 // Config contains the configuration of the url shortener.
 type Config struct {
 	Mongo struct {
-		Host     string `json:"host"`
-		Port 		 string `json:"port"`
-		DB       string `json:"db"`
-		Collection  string `json:"collection"`
+		Host       string `json:"host"`
+		Port       string `json:"port"`
+		DB         string `json:"db"`
+		Collection string `json:"collection"`
 	} `json:"mongo"`
 }
 

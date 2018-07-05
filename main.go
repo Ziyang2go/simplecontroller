@@ -6,9 +6,10 @@ import (
 	"log"
 	"os"
 	"time"
-	"github.com/Ziyang2go/tgik-controller/version"
+
 	"github.com/Ziyang2go/tgik-controller/config"
 	"github.com/Ziyang2go/tgik-controller/mongo"
+	"github.com/Ziyang2go/tgik-controller/version"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
