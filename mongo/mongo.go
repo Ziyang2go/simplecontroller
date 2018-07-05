@@ -2,6 +2,7 @@ package mongo
 
 import (
 	"log"
+	"time"
 
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -9,7 +10,7 @@ import (
 
 type MongoSVC interface {
 	Create(string, string) error
-	Update(string, string, string) (string, error)
+	Update(string, string, string) error
 	Close() error
 }
 
@@ -34,7 +35,7 @@ func (m *mongo) Close() error {
 func (m *mongo) Create(name string, status string) error {
 	log.Print("Creating mongo record.....")
 	log.Print(name, status)
-	job := &Job{bson.NewObjectId(), name, status, ""}
+	job := &Job{bson.NewObjectId(), name, status, "", time.Now().Format(time.RFC850)}
 	c := m.db.DB(m.dbName).C(m.collectionName)
 	err := c.Insert(job)
 	if err != nil {
@@ -43,18 +44,15 @@ func (m *mongo) Create(name string, status string) error {
 	return nil
 }
 
-func (m *mongo) Update(name string, status string, jobLog string) (string, error) {
+func (m *mongo) Update(name string, status string, jobLog string) error {
 	log.Print("Update job instance")
 	log.Print(name, status, jobLog)
 	c := m.db.DB(m.dbName).C(m.collectionName)
-	var item Job
-	change := mgo.Change{
-		Update:    bson.M{"name": name, "status": status, "logs": jobLog},
-		ReturnNew: true,
+	err := c.Update(bson.M{"name": name}, bson.M{"$set": bson.M{"status": status, "logs": jobLog}})
+	if err != nil {
+		return err
 	}
-	c.Find(bson.M{"name": name}).Apply(change, &item)
-	log.Print(item)
-	return "123", nil
+	return nil
 }
 
 type mongo struct {
@@ -64,8 +62,9 @@ type mongo struct {
 }
 
 type Job struct {
-	ID     bson.ObjectId `json:"_id" bson:"_id"`
-	NAME   string        `json:"name"`
-	STATUS string        `json:"status"`
-	LOGS   string        `json:"logs"`
+	ID        bson.ObjectId `json:"_id" bson:"_id"`
+	NAME      string        `json:"name"`
+	STATUS    string        `json:"status"`
+	LOGS      string        `json:"logs"`
+	CREATEDAT string        `json:"createdAt"`
 }

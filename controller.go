@@ -23,7 +23,7 @@ import (
 
 type MongoSVC interface {
 	Create(string, string) error
-	Update(string, string, string) (string, error)
+	Update(string, string, string) error
 	Close() error
 }
 
@@ -47,7 +47,6 @@ func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.
 		mongoSvc:        mongoSvc,
 		queue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "secretsync"),
 	}
-
 	jobInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
@@ -216,7 +215,7 @@ func (c *JobController) UpdateJob(key interface{}) error {
 		c.cleanUp(ns, jobName)
 	}
 
-	_, mongoErr := c.mongoSvc.Update(jobName, status, jobLog)
+	mongoErr := c.mongoSvc.Update(jobName, status, jobLog)
 	if mongoErr != nil {
 		log.Printf("Save to mongo error %v", mongoErr)
 	}
