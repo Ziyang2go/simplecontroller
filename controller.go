@@ -22,7 +22,7 @@ import (
 )
 
 type MongoSVC interface {
-	Create(string, string) error
+	Create(string, string, string, string) error
 	Update(string, string, string) error
 	Close() error
 }
@@ -182,7 +182,10 @@ func (c *JobController) CreateJob(key interface{}) error {
 	if jobSucceed == 1 || jobFailed == 1 {
 		return nil
 	}
-	mongoErr := c.mongoSvc.Create(jobName, "Pending")
+	metaData := kubeJob.ObjectMeta.GetLabels()
+	organization := metaData["org"]
+	jobType := metaData["jobType"]
+	mongoErr := c.mongoSvc.Create(jobName, "pending", organization, jobType)
 	if mongoErr != nil {
 		log.Printf("Save to mongo error $v", mongoErr)
 	}

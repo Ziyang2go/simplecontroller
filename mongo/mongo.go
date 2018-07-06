@@ -9,7 +9,7 @@ import (
 )
 
 type MongoSVC interface {
-	Create(string, string) error
+	Create(string, string, string, string) error
 	Update(string, string, string) error
 	Close() error
 }
@@ -32,10 +32,10 @@ func (m *mongo) Close() error {
 	return nil
 }
 
-func (m *mongo) Create(name string, status string) error {
+func (m *mongo) Create(name string, status string, org string, jobType string) error {
 	log.Print("Creating mongo record.....")
 	log.Print(name, status)
-	job := &Job{bson.NewObjectId(), name, status, "", time.Now().Format(time.RFC850)}
+	job := &Job{bson.NewObjectId(), name, status, "", org, jobType, time.Now().Format(time.RFC850)}
 	c := m.db.DB(m.dbName).C(m.collectionName)
 	err := c.Insert(job)
 	if err != nil {
@@ -62,9 +62,11 @@ type mongo struct {
 }
 
 type Job struct {
-	ID        bson.ObjectId `json:"_id" bson:"_id"`
-	NAME      string        `json:"name"`
-	STATUS    string        `json:"status"`
-	LOGS      string        `json:"logs"`
-	CREATEDAT string        `json:"createdAt"`
+	ID           bson.ObjectId `json:"_id" bson:"_id"`
+	NAME         string        `json:"name"`
+	STATUS       string        `json:"status"`
+	LOGS         string        `json:"logs"`
+	ORGANIZATION string        `json:"organization"`
+	TYPE         string        `json:"type"`
+	CREATEDAT    string        `json:"createdAt"`
 }
