@@ -2,7 +2,7 @@
   "mongo": {
     "host": "mongo",
     "port": "27017",
-    "db": "studio",
-    "collection": "jobs"
+    "db": "studio_production",
+    "collection": "threekitjobs"
   }
 }
