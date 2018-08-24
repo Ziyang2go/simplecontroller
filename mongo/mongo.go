@@ -35,7 +35,7 @@ func (m *mongo) Close() error {
 func (m *mongo) Create(name string, status string, org string, jobType string) error {
 	log.Print("Creating mongo record.....")
 	log.Print(name, status)
-	job := &Job{bson.NewObjectId(), name, status, "", org, jobType, time.Now().Format(time.RFC850)}
+	job := &Job{bson.NewObjectId(), name, status, "", org, jobType, time.Now()}
 	c := m.db.DB(m.dbName).C(m.collectionName)
 	err := c.Insert(job)
 	if err != nil {
@@ -68,5 +68,5 @@ type Job struct {
 	LOGS         string        `json:"logs"`
 	ORGANIZATION string        `json:"organization"`
 	TYPE         string        `json:"type"`
-	CREATEDAT    string        `json:"createdAt"`
+	CREATEDAT    time.Time     `json:"createdAt"`
 }
