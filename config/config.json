@@ -4,5 +4,6 @@
     "port": "27017",
     "db": "studio_production",
     "collection": "threekitjobs"
-  }
+  },
+  "pushgateway": "mythreekit-pushgateway-prometheus-pushgateway:9091"
 }

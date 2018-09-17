@@ -52,7 +52,7 @@ endif
 
 IMAGE := $(REGISTRY)/$(BIN)-$(ARCH)
 
-BUILD_IMAGE ?= golang:1.8-alpine
+BUILD_IMAGE ?= golang:1.10-alpine
 
 DOCKER_MOUNT_MODE=delegated
 
@@ -83,7 +83,7 @@ bin/$(ARCH)/$(BIN): build-dirs
 	@docker run                                                            \
 	    -ti                                                                \
 	    -u $$(id -u):$$(id -g)                                             \
-	    -v $$(pwd)/.go:/go:$(DOCKER_MOUNT_MODE)                            \
+	    -v $$(pwd)/.go:/go:$(DOCKER_	OUNT_MODE)                            \
 	    -v $$(pwd):/go/src/$(PKG):$(DOCKER_MOUNT_MODE)                     \
 	    -v $$(pwd)/bin/$(ARCH):/go/bin:$(DOCKER_MOUNT_MODE)                \
 	    -v $$(pwd)/bin/$(ARCH):/go/bin/linux_$(ARCH):$(DOCKER_MOUNT_MODE)  \

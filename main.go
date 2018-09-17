@@ -42,7 +42,7 @@ func main() {
 		config *rest.Config
 		err    error
 	)
-	var gateway = "http://localhost:9091"
+	var gateway = mongoconf.Pushgateway
 	if kubeconfig != "" {
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {

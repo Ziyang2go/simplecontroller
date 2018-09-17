@@ -13,6 +13,7 @@ type Config struct {
 		DB         string `json:"db"`
 		Collection string `json:"collection"`
 	} `json:"mongo"`
+	Pushgateway string `json:"pushgateway"`
 }
 
 // FromFile returns a configuration parsed from the given file.
