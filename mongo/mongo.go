@@ -58,8 +58,7 @@ func (m *mongo) Get(name string) Job {
 }
 
 func (m *mongo) Update(name string, status string, jobLog string) error {
-	log.Print("Update job instance")
-	log.Print(name, status, jobLog)
+	log.Printf("Update job instance %s %s", name, status)
 	c := m.db.DB(m.dbName).C(m.collectionName)
 	err := c.Update(bson.M{"name": name}, bson.M{"$set": bson.M{"status": status, "logs": jobLog}})
 	if err != nil {

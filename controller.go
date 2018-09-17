@@ -49,7 +49,6 @@ func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.
 	jobInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				log.Print("Jobs updated")
 				key, err := cache.MetaNamespaceKeyFunc(obj)
 				if err != nil {
 					log.Printf("onAdd key error for %#v: %v", obj, err)
@@ -59,8 +58,8 @@ func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.
 			},
 
 			UpdateFunc: func(oldObj, newObj interface{}) {
-				log.Print("Jobs updated")
 				key, err := cache.MetaNamespaceKeyFunc(newObj)
+				log.Printf("Job is updated %s ", key)
 				if err != nil {
 					log.Printf("onUpdate key error for %#v: %v", newObj, err)
 					runtime.HandleError(err)
@@ -69,7 +68,12 @@ func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.
 			},
 
 			DeleteFunc: func(obj interface{}) {
-				log.Print("Jobs deleted")
+				key, err := cache.MetaNamespaceKeyFunc(obj)
+				if err != nil {
+					log.Printf("onDelete key error for %#v: %v", obj, err)
+					runtime.HandleError(err)
+				}
+				log.Print("Job is deleted %s ", key)
 			},
 		},
 	)
@@ -233,7 +237,7 @@ func (c *JobController) GetJobLogs(ns string, jobName string) (string, error) {
 	return buf.String(), nil
 }
 
-//Cleanup cleans up finished job containers
+//CleanUp cleans up finished job containers
 func (c *JobController) CleanUp(ns string, jobName string) {
 	log.Print("Clean up job ", jobName)
 	policy := metav1.DeletePropagationBackground

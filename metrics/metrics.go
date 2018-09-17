@@ -10,11 +10,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/push"
 )
 
+//JobMetrics takes registry and gateway
 type JobMetrics struct {
 	registry prometheus.Registry
 	gateway  string
 }
 
+//NewJobMetrics initialize the job metrics
 func NewJobMetrics(gateway string) *JobMetrics {
 	var (
 		completionTime = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -33,8 +35,9 @@ func NewJobMetrics(gateway string) *JobMetrics {
 	return c
 }
 
+// Push creates a metrics and push it to gateway
 func (c *JobMetrics) Push(job mongo.Job, status string) {
-	log.Println("Pushing metrics to gateway")
+	log.Printf("Pushing metrics to gateway %v", job)
 
 	var (
 		completionTime = prometheus.NewGauge(prometheus.GaugeOpts{
