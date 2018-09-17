@@ -196,13 +196,17 @@ func (c *JobController) UpdateJob(key interface{}) error {
 	var jobLog string = ""
 	if status == "ok" || status == "failed" {
 		jobLog, _ = c.GetJobLogs(ns, jobName)
-		mongoErr := c.mongoSvc.Update(jobName, status, jobLog)
-		if mongoErr != nil {
-			log.Printf("Save to mongo error %v", mongoErr)
-		}
 		job := c.mongoSvc.Get(jobName)
+		if job.STATUS == "ok" || job.STATUS == "failed" {
+			return nil
+		}
 		c.metrics.Push(job, status)
 		c.CleanUp(ns, jobName)
+	}
+
+	mongoErr := c.mongoSvc.Update(jobName, status, jobLog)
+	if mongoErr != nil {
+		log.Printf("Save to mongo error %v", mongoErr)
 	}
 
 	return nil
