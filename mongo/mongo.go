@@ -1,6 +1,7 @@
 package mongo
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 type MongoSVC interface {
 	Create(string, string, string, string) error
 	Update(string, string, string) error
+	Get(string) Job
 	Close() error
 }
 
@@ -42,6 +44,17 @@ func (m *mongo) Create(name string, status string, org string, jobType string) e
 		return err
 	}
 	return nil
+}
+
+func (m *mongo) Get(name string) Job {
+	log.Printf("Get instance %s", name)
+	c := m.db.DB(m.dbName).C(m.collectionName)
+	var data Job
+	err := c.Find(bson.M{"name": name}).One(&data)
+	if err != nil {
+		fmt.Printf("Could not get doc %s ", name)
+	}
+	return data
 }
 
 func (m *mongo) Update(name string, status string, jobLog string) error {

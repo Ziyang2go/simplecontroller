@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Ziyang2go/tgik-controller/metrics"
+	"github.com/Ziyang2go/tgik-controller/mongo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -21,12 +23,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-type MongoSVC interface {
-	Create(string, string, string, string) error
-	Update(string, string, string) error
-	Close() error
-}
-
 const targetNs = "mythreekit"
 
 type JobController struct {
@@ -35,10 +31,11 @@ type JobController struct {
 	jobLister       listerbatchv1.JobLister
 	jobListerSynced cache.InformerSynced
 	podGetter       corev1.PodsGetter
-	mongoSvc        MongoSVC
+	mongoSvc        mongo.MongoSVC
+	metrics         *metrics.JobMetrics
 }
 
-func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.JobInformer, mongoSvc MongoSVC) *JobController {
+func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.JobInformer, mongoSvc mongo.MongoSVC, gateway string) *JobController {
 	c := &JobController{
 		jobGetter:       client.BatchV1(),
 		jobLister:       jobInformer.Lister(),
@@ -46,16 +43,19 @@ func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.
 		podGetter:       client.CoreV1(),
 		mongoSvc:        mongoSvc,
 		queue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "secretsync"),
+		metrics:         metrics.NewJobMetrics(gateway),
 	}
+
 	jobInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
+				log.Print("Jobs updated")
 				key, err := cache.MetaNamespaceKeyFunc(obj)
 				if err != nil {
 					log.Printf("onAdd key error for %#v: %v", obj, err)
 					runtime.HandleError(err)
 				}
-				c.CreateJob(key)
+				log.Printf("New job added %s", key)
 			},
 
 			UpdateFunc: func(oldObj, newObj interface{}) {
@@ -65,7 +65,7 @@ func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.
 					log.Printf("onUpdate key error for %#v: %v", newObj, err)
 					runtime.HandleError(err)
 				}
-				c.UpdateJob(key)
+				c.EnqueJobs(key)
 			},
 
 			DeleteFunc: func(obj interface{}) {
@@ -76,6 +76,7 @@ func NewJobController(client *kubernetes.Clientset, jobInformer informerbatchv1.
 	return c
 }
 
+// Run is the main func for workqueue
 func (c *JobController) Run(stop <-chan struct{}) {
 	var wg sync.WaitGroup
 
@@ -162,36 +163,12 @@ func (c *JobController) processNextWorkItem() bool {
 	return true
 }
 
+// EnqueJobs adds new update job
 func (c *JobController) EnqueJobs(key string) {
-	c.queue.Add(key)
+	c.queue.AddRateLimited(key)
 }
 
-func (c *JobController) CreateJob(key interface{}) error {
-	arr := strings.Split(key.(string), "/")
-	ns, jobName := arr[0], arr[1]
-	if ns != targetNs {
-		log.Print("ignore different namespace jobs")
-		return nil
-	}
-	kubeJob, err := c.jobLister.Jobs(ns).Get(jobName)
-	if err != nil {
-		return err
-	}
-	jobSucceed := kubeJob.Status.Succeeded
-	jobFailed := kubeJob.Status.Failed
-	if jobSucceed == 1 || jobFailed == 1 {
-		return nil
-	}
-	metaData := kubeJob.ObjectMeta.GetLabels()
-	organization := metaData["org"]
-	jobType := metaData["jobType"]
-	mongoErr := c.mongoSvc.Create(jobName, "pending", organization, jobType)
-	if mongoErr != nil {
-		log.Printf("Save to mongo error $v", mongoErr)
-	}
-	return nil
-}
-
+// UpdateJob would check job status, update database and send metrics
 func (c *JobController) UpdateJob(key interface{}) error {
 	arr := strings.Split(key.(string), "/")
 	ns, jobName := arr[0], arr[1]
@@ -214,18 +191,21 @@ func (c *JobController) UpdateJob(key interface{}) error {
 	}
 	var jobLog string = ""
 	if status == "ok" || status == "failed" {
-		jobLog, _ = c.getJobLogs(ns, jobName)
-		c.cleanUp(ns, jobName)
+		jobLog, _ = c.GetJobLogs(ns, jobName)
+		mongoErr := c.mongoSvc.Update(jobName, status, jobLog)
+		if mongoErr != nil {
+			log.Printf("Save to mongo error %v", mongoErr)
+		}
+		job := c.mongoSvc.Get(jobName)
+		c.metrics.Push(job, status)
+		c.CleanUp(ns, jobName)
 	}
 
-	mongoErr := c.mongoSvc.Update(jobName, status, jobLog)
-	if mongoErr != nil {
-		log.Printf("Save to mongo error %v", mongoErr)
-	}
 	return nil
 }
 
-func (c *JobController) getJobLogs(ns string, jobName string) (string, error) {
+//GetJobLogs gets the completed job logs
+func (c *JobController) GetJobLogs(ns string, jobName string) (string, error) {
 	log.Print("Get logs for job ", jobName)
 	jobPods, err := c.podGetter.Pods(ns).List(metav1.ListOptions{LabelSelector: "job-name=" + jobName})
 	if err != nil {
@@ -253,7 +233,8 @@ func (c *JobController) getJobLogs(ns string, jobName string) (string, error) {
 	return buf.String(), nil
 }
 
-func (c *JobController) cleanUp(ns string, jobName string) {
+//Cleanup cleans up finished job containers
+func (c *JobController) CleanUp(ns string, jobName string) {
 	log.Print("Clean up job ", jobName)
 	policy := metav1.DeletePropagationBackground
 	err := c.jobGetter.Jobs(ns).Delete(jobName, &metav1.DeleteOptions{PropagationPolicy: &policy})

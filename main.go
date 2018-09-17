@@ -42,6 +42,7 @@ func main() {
 		config *rest.Config
 		err    error
 	)
+	var gateway = "http://localhost:9091"
 	if kubeconfig != "" {
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {
@@ -53,7 +54,7 @@ func main() {
 	}
 	client := kubernetes.NewForConfigOrDie(config)
 	sharedInformers := informers.NewSharedInformerFactory(client, 10*time.Minute)
-	jobController := NewJobController(client, sharedInformers.Batch().V1().Jobs(), mongoSvc)
+	jobController := NewJobController(client, sharedInformers.Batch().V1().Jobs(), mongoSvc, gateway)
 	sharedInformers.Start(nil)
 	jobController.Run(nil)
 }
